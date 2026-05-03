@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# Configures a bootstraped ArchLinux
+# 
+# Caveats:
+# - Sets en_US.UTF-8 as the locale
+# - Sets the timezone to UTC
+# - Depends on $hostname and $user being replaced
+
+echo "$hostname" > /etc/hostname
+
+export LANG=en_US.UTF-8
+echo LANG=en_US.UTF-8 > /etc/locale.conf
+sed -i '/en_US.UTF-8/s/^#//g' /etc/locale.conf
+locale-gen
+
+ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+hwclock --systohc --utc
+
+pacman -Sy --noconfirm
+
+pacman -S --noconfirm grub efibootmgr mkinitcpio
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id="Linux Boot Manager" --recheck
+mkinitcpio -p linux
+grub-mkconfig -o /boot/grub/grub.cfg
+
+pacman -S --noconfirm networkmanager iwd
+systemctl enable NetworkManager.service
+
+groupadd "$user" && useradd -mg "$user" -G wheel -s /bin/zsh "$user"
+sed -i '/%wheel ALL=(ALL:ALL) ALL/s/^#//g' /etc/sudoers
+
+pacman -S --noconfirm git
+git clone https://github.com/badrngxyz/vegas.git "/home/$user/.vegas"
+
+exit

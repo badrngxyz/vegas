@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+#
+# Installs a barebones ArchLinux
+#
+# Caveats:
+# - Only works on disks where partitions begin with p
+# - Focused on EFI systems
+
+set -euo pipefail
+IFS=$'\n\t'
+
+usage="usage: $0 <disk> <swap in GiB> <hostname> <user>"
+
+disk=${1:-}
+if [[ -z "$disk" ]]; then
+  echo "$usage"
+  exit 1
+fi
+
+swap=${2:-}
+if [[ -z "$swap" ]]; then
+  echo "$usage"
+  exit 1
+fi
+
+hostname=${3:-}
+if [[ -z "$hostname" ]]; then
+  echo "$usage"
+  exit 1
+fi
+
+user=${4:-}
+if [[ -z "$user" ]]; then
+  echo "$usage"
+  exit 1
+fi
+
+# Check internet connectivity
+ping -c 3 -n -w 1000 1.1.1.1
+
+# Update mirrors for speed
+reflector --protocol https \
+  --latest 100 \
+  --fastest 50 \
+  --save /etc/pacman.d/mirrorlist
+
+parted "$disk" -- mklabel gpt
+
+# efi partition
+parted -a opt "$disk" -- unit MiB mkpart primary fat32 1 551
+parted "$disk" -- set 1 esp on
+
+# swap partition
+swap_end=$(bc <<<"$swap * 1024 + 551")
+parted -a opt "$disk" -- unit MiB mkpart primary linux-swap 551 "$swap_end"
+
+# system partition
+parted -a opt "$disk" -- unit MiB mkpart primary btrfs "$swap_end" "100%"
+
+mkfs.fat -F 32 -n boot "${disk}p1"
+mkswap -L swap "${disk}p2"
+mkfs.btrfs -L arch -f "${disk}p3"
+
+swapon "${disk}p2"
+
+# mount disks to current running system
+mount "${disk}p3" /mnt
+mkdir /mnt/boot
+mount "${disk}p1" /mnt/boot
+
+# install everything to get it started
+pacstrap /mnt linux linux-firmware base base-devel
+sed -e "s/\$hostname/${hostname}/" -e "s/\$user/${user}" setup | arch-chroot /mnt
+
+genfstab /mnt >> /mnt/etc/fstab
+umount /mnt/boot
+umount /mnt

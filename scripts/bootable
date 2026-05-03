@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# Creates a bootable ArchLinux
+#
+# Usage: bootstrap <shasums> <sig> <iso> <disk>
+#
+set -euo pipefail
+IFS=$'\n\t'
+
+usage="usage: $0 <shasums> <sig> <iso> <disk>"
+
+shasums=${1:-}
+if [[ -z "$shasums" ]]; then
+  echo "$usage"
+  exit 1
+fi
+
+sig=${2:-}
+if [[ -z "$sig" ]]; then
+  echo "$usage"
+  exit 1
+fi
+
+iso=${3:-}
+if [[ -z "$iso" ]]; then
+  echo "$usage"
+  exit 1
+fi
+
+disk=${4:-}
+if [[ -z "$disk" ]]; then
+  echo "$usage"
+  exit 1
+fi
+
+# check file checksums
+sha256sum -c "$shasums" --ignore-missing
+
+# check signature
+gpg --auto-key-locate clear,wkd -v --locate-external-key pierre@archlinux.org
+gpg --verify "$sig" "$iso"
+
+# write to disk
+dd bs=4M conv=fsync oflag=direct status=progress \
+  if="$iso" of="$disk"
